@@ -271,7 +271,7 @@ void setup(){
     xTaskCreatePinnedToCore(JoyTask, "Joystick Task", 2048, NULL, 2, NULL, 0);    
     xTaskCreatePinnedToCore(OledTask, "OLED Task", 4096, NULL, 2, NULL, 0);    
     xTaskCreatePinnedToCore(PlayerControlTask, "Player Control Task", 2048, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(AudioTask, "Audio Task", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(AudioTask, "Audio Task", 16384, NULL, 1, NULL, 1);
 }
 
 void loop() {
