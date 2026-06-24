@@ -97,12 +97,7 @@ UI Task
 ├── lib
 ├── src
 │   ├── main.cpp
-│   ├── ui.cpp
-│   ├── ui.h
-│   ├── input.cpp
-│   ├── input.h
-│   ├── events.h
-│   └── globals.h
+│   ├── config.h
 ├── platformio.ini
 └── README.md
 ```
