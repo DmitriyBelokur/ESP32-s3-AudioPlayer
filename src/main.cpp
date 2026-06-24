@@ -9,52 +9,16 @@
 
 #include "Audio.h"
 
-// ---------------- OLED ----------------
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define SDA_PIN 8
-#define SCL_PIN 9
-
-// ---------------- Joystick ----------------
-#define JOY_X 1
-#define JOY_Y 2
-#define JOY_SW 4
-
-// ---------------- SD ----------------
-#define SD_CS   11
-#define SD_SCK  12
-#define SD_MOSI 13
-#define SD_MISO 14
-
-// ---------------- I2S ----------------
-#define I2S_LRC  15
-#define I2S_DOUT 16
-#define I2S_BCLK 17
-
-// ================= Default Values =================
-volatile int volume = 11;          // 0..21
-volatile const int MAX_VOLUME = 18; // 85% of the MAX 21 for MP3 
-volatile bool showVolumeScreen = false;
-volatile uint32_t volumeChangedTime = 0;
-
-volatile bool isPlaying = false;
-volatile int currentTrack = 0;
-volatile int trackCount = 0;
-volatile bool joyBtn = false;
-
-// ================= Structure =================
-struct TrackInfo{
-    String path;
-    String title;
-};
-
-TrackInfo tracks[100];
+#include "config.h"
 
 // ================= Initialization =================
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-Audio audio;
-QueueHandle_t playerQueue;
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1); // OLED display object
+Audio audio; // Audio object
+QueueHandle_t playerQueue; // Queue for player commands
+TrackInfo tracks[100]; // Array to hold track information
+PlayerState state;  // Structure to hold the current state of the player
 
+// Enum for player commands
 enum PlayerCommand{
     CMD_NONE,
     CMD_PLAY,
@@ -63,55 +27,64 @@ enum PlayerCommand{
     CMD_PREV,
     CMD_VOL_UP,
     CMD_VOL_DOWN
-};
+}; 
 
 void scanMusic();
 
 // ================= JOYSTICK TASK =================
 void JoyTask(void *pvParameters){
+    PlayerCommand cmd = CMD_NONE;
     while (true){
+                
         int x = analogRead(JOY_X);
         int y = analogRead(JOY_Y);
 
-        // VOL+
-        if (x > 3500) {
-            volume++;
-            if (volume > MAX_VOLUME) volume = MAX_VOLUME;
-            showVolumeScreen = true;
-            volumeChangedTime = millis();
+        if (x > 3500) cmd = CMD_VOL_UP;
+        else if (x < 500) cmd = CMD_VOL_DOWN;
+        else if (y > 3500) cmd = CMD_NEXT;
+        else if (y < 500) cmd = CMD_PREV;
+        else if (!digitalRead(JOY_SW)) cmd = CMD_PLAY;
+
+        if (cmd != CMD_NONE){
+            xQueueSend(playerQueue, &cmd, portMAX_DELAY);
             vTaskDelay(pdMS_TO_TICKS(200));
         }
+        vTaskDelay(pdMS_TO_TICKS(20)); // 50Hz
+    }
+}        
 
-        // VOL-
-        if (x < 500) {
-            volume--;
-            if (volume < 0) volume = 0;
-            showVolumeScreen = true;
-            volumeChangedTime = millis();
-            vTaskDelay(pdMS_TO_TICKS(200));
+void PlayerControlTask(void *pvParameters){
+    PlayerCommand cmd;
+    while (true){
+        if(xQueueReceive(playerQueue, &cmd, portMAX_DELAY)){
+            switch(cmd){
+                case CMD_VOL_UP: // VOL+
+                    volume++;
+                    if (volume > MAX_VOLUME) volume = MAX_VOLUME;
+                    showVolumeScreen = true;
+                    volumeChangedTime = millis();
+                    break;
+                case CMD_VOL_DOWN: // VOL-
+                    volume--;
+                    if (volume < 0) volume = 0;
+                    showVolumeScreen = true;
+                    volumeChangedTime = millis();
+                    break;
+                case CMD_NEXT: // NEXT TRACK
+                    currentTrack++;
+                    if(currentTrack >= trackCount) currentTrack = 0;
+                    break;
+                case CMD_PREV: // PREVIOUS TRACK
+                    currentTrack--;
+                    if (currentTrack < 0) currentTrack = 0;
+                    break;
+                case CMD_PLAY:
+                    isPlaying = !isPlaying;
+                    break;
+                default:
+                    break;
+            }
         }
-
-        // NEXT TRACK
-        if (y > 3500) {
-            if(currentTrack >= trackCount) currentTrack = 0;
-            vTaskDelay(pdMS_TO_TICKS(300));
-        }
-
-        // PREVIOUS TRACK
-        if (y < 500) {
-            currentTrack--;
-            if (currentTrack < 1) currentTrack = 1;
-            vTaskDelay(pdMS_TO_TICKS(300));
-        }
-
-        // PLAY/STOP toggle
-        joyBtn = !digitalRead(JOY_SW);
-
-        if (joyBtn) {
-            isPlaying = !isPlaying;
-            vTaskDelay(pdMS_TO_TICKS(300));
-        }
-
         vTaskDelay(pdMS_TO_TICKS(20)); // 50Hz
     }
 }
@@ -209,15 +182,58 @@ void OledTask(void *pvParameters){
 
 // ================= AUDIO TASK =================
 void AudioTask(void *pvParameters){
+   PlayerCommand cmd;
+
     while(true){
-        audio.loop();
-        vTaskDelay(pdMS_TO_TICKS(1));
+                
+        if(xQueueReceive(playerQueue, &cmd, portMAX_DELAY)){
+            switch(cmd){
+                case CMD_PLAY:
+                    if(state.trackCount > 0){
+                        audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
+                        state.isPlaying = true;
+                    }
+                    break;
+                case CMD_PAUSE:
+                    audio.stopSong();
+                    state.isPlaying = false;
+                    break;
+                case CMD_NEXT:
+                    state.currentTrack = (state.currentTrack + 1) % state.trackCount;
+                    audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
+                    state.isPlaying = true;
+                    break;
+                case CMD_PREV:
+                    state.currentTrack = (state.currentTrack - 1 + state.trackCount) % state.trackCount;
+                    audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
+                    state.isPlaying = true;
+                    break;
+                case CMD_VOL_UP:
+                    if(state.volume < MAX_VOLUME) state.volume++;
+                    audio.setVolume(state.volume);
+                    state.showVolumeScreen = true;
+                    state.volumeChangedTime = millis();
+                    break;
+                case CMD_VOL_DOWN:
+                    if(state.volume > 0) state.volume--;
+                    audio.setVolume(state.volume);
+                    state.showVolumeScreen = true;
+                    state.volumeChangedTime = millis();
+                    break;
+                default: break;
+            }
+        }
+        
+        if(state.isPlaying) audio.loop();
+        vTaskDelay(pdMS_TO_TICKS(1));   
     }
-}
+}    
 
 // ================= SETUP =================
 void setup(){
     Serial.begin(115200);
+    playerQueue = xQueueCreate(10, sizeof(PlayerCommand));
+
     pinMode(JOY_SW, INPUT_PULLUP);
     Wire.begin(SDA_PIN, SCL_PIN);
 
@@ -244,7 +260,7 @@ void setup(){
     }
 
     scanMusic();
-
+  
     audio.setPinout(
         I2S_BCLK,
         I2S_LRC,
@@ -252,13 +268,14 @@ void setup(){
     );
 
     // task FreeRTOS
-    xTaskCreatePinnedToCore(JoyTask, "Joystick Task", 2048, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(OledTask, "OLED Task", 4096, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(AudioTask, "Audio Task", 8192, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(JoyTask, "Joystick Task", 2048, NULL, 2, NULL, 0);    
+    xTaskCreatePinnedToCore(OledTask, "OLED Task", 4096, NULL, 2, NULL, 0);    
+    xTaskCreatePinnedToCore(PlayerControlTask, "Player Control Task", 2048, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(AudioTask, "Audio Task", 8192, NULL, 1, NULL, 1);
 }
 
 void loop() {
-    
+     
 }
 
 void scanMusic(){
@@ -301,5 +318,18 @@ void scanMusic(){
     Serial.printf(
         "Tracks found: %d\n",
         trackCount);
+    }
+}
+
+// Callback
+void audio_eof_mp3(const char *info){
+    Serial.printf("Track finished: %s\n", info);
+
+    currentTrack++;
+    if(currentTrack >= trackCount) currentTrack = 0;
+
+    if(trackCount > 0){
+        audio.connecttoFS(SD, tracks[currentTrack].path.c_str());
+        isPlaying = true;
     }
 }
