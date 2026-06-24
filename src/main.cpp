@@ -200,11 +200,15 @@ void AudioTask(void *pvParameters){
                     break;
                 case CMD_NEXT:
                     state.currentTrack = (state.currentTrack + 1) % state.trackCount;
+                    audio.stopSong();
+                    vTaskDelay(20);
                     audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
                     state.isPlaying = true;
                     break;
                 case CMD_PREV:
                     state.currentTrack = (state.currentTrack - 1 + state.trackCount) % state.trackCount;
+                    audio.stopSong();
+                    vTaskDelay(20);
                     audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
                     state.isPlaying = true;
                     break;
@@ -224,7 +228,7 @@ void AudioTask(void *pvParameters){
             }
         }
         
-        if(state.isPlaying) audio.loop();
+        audio.loop();
         vTaskDelay(pdMS_TO_TICKS(1));   
     }
 }    
@@ -266,6 +270,7 @@ void setup(){
         I2S_LRC,
         I2S_DOUT
     );
+    audio.setVolume(state.volume);
 
     // task FreeRTOS
     xTaskCreatePinnedToCore(JoyTask, "Joystick Task", 2048, NULL, 2, NULL, 0);    
@@ -279,7 +284,7 @@ void loop() {
 }
 
 void scanMusic(){
-    trackCount = 0;
+    state.trackCount = 0;
 
     File dir = SD.open("/Music");
 
@@ -297,27 +302,21 @@ void scanMusic(){
             String name = file.name();
 
             if(name.endsWith(".mp3") ||name.endsWith(".MP3")){
-                {tracks[trackCount].path = String("/Music/") + name;
+                tracks[state.trackCount].path = String("/Music/") + name;
 
-                tracks[trackCount].title = name;
+                tracks[state.trackCount].title = name;
 
-                tracks[trackCount].title.replace(".mp3","");
-                tracks[trackCount].title.replace(".MP3","");
+                tracks[state.trackCount].title.replace(".mp3","");
+                tracks[state.trackCount].title.replace(".MP3","");
 
-                trackCount++;
+                state.trackCount++;
 
-                if(trackCount >= 100) break;
-                }
+                if(state.trackCount >= 100) break;                
             }
-
-        file.close();
         }
+        file.close();
 
-    dir.close();
-
-    Serial.printf(
-        "Tracks found: %d\n",
-        trackCount);
+        Serial.printf("Tracks found: %d\n",state.trackCount);
     }
 }
 
