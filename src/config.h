@@ -20,14 +20,14 @@
 #define I2S_DOUT 16
 #define I2S_BCLK 17
 // ================= Default Values =================
-volatile int volume = 11;          // 0..21
+//volatile int volume = 11;          // 0..21
 volatile const int MAX_VOLUME = 18; // 85% of the MAX 21 for MP3 
-volatile bool showVolumeScreen = false;
-volatile uint32_t volumeChangedTime = 0;
+//volatile bool showVolumeScreen = false;
+//volatile uint32_t volumeChangedTime = 0;
 
-volatile bool isPlaying = false;
-volatile int currentTrack = 0;
-volatile int trackCount = 0;
+//volatile bool isPlaying = false;
+//volatile int currentTrack = 0;
+//volatile int trackCount = 0;
 volatile bool joyBtn = false;
 
 // ================= Structure =================

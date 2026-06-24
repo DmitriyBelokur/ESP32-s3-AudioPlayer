@@ -59,27 +59,27 @@ void PlayerControlTask(void *pvParameters){
         if(xQueueReceive(playerQueue, &cmd, portMAX_DELAY)){
             switch(cmd){
                 case CMD_VOL_UP: // VOL+
-                    volume++;
-                    if (volume > MAX_VOLUME) volume = MAX_VOLUME;
-                    showVolumeScreen = true;
-                    volumeChangedTime = millis();
+                    state.volume++;
+                    if (state.volume > MAX_VOLUME) state.volume = MAX_VOLUME;
+                    state.showVolumeScreen = true;
+                    state.volumeChangedTime = millis();
                     break;
                 case CMD_VOL_DOWN: // VOL-
-                    volume--;
-                    if (volume < 0) volume = 0;
-                    showVolumeScreen = true;
-                    volumeChangedTime = millis();
+                    state.volume--;
+                    if (state.volume < 0) state.volume = 0;
+                    state.showVolumeScreen = true;
+                    state.volumeChangedTime = millis();
                     break;
                 case CMD_NEXT: // NEXT TRACK
-                    currentTrack++;
-                    if(currentTrack >= trackCount) currentTrack = 0;
+                    state.currentTrack++;
+                    if(state.currentTrack >= state.trackCount) state.currentTrack = 0;
                     break;
                 case CMD_PREV: // PREVIOUS TRACK
-                    currentTrack--;
-                    if (currentTrack < 0) currentTrack = 0;
+                    state.currentTrack--;
+                    if (state.currentTrack < 0) state.currentTrack = 0;
                     break;
                 case CMD_PLAY:
-                    isPlaying = !isPlaying;
+                    state.isPlaying = !state.isPlaying;
                     break;
                 default:
                     break;
@@ -93,20 +93,20 @@ void PlayerControlTask(void *pvParameters){
 void OledTask(void *pvParameters){
     while (true){
         // Show volume screen for 2 seconds after volume change    
-         if(showVolumeScreen){
-            if(millis() - volumeChangedTime > 2000){
-                showVolumeScreen = false;
+         if(state.showVolumeScreen){
+            if(millis() - state.volumeChangedTime > 2000){
+                state.showVolumeScreen = false;
             }
         }
 
         display.clearDisplay();
 
-        if(showVolumeScreen){
+        if(state.showVolumeScreen){
             display.setCursor(0,0);
             display.println("VOLUME");
 
             int width = map(
-                volume,
+                state.volume,
                 0,
                 MAX_VOLUME,
                 0,
@@ -132,7 +132,7 @@ void OledTask(void *pvParameters){
             display.setCursor(40,45);
 
             int percent = map(
-                volume,
+                state.volume,
                 0,
                 MAX_VOLUME,
                 0,
@@ -148,14 +148,14 @@ void OledTask(void *pvParameters){
         display.setCursor(0,15);
 
         display.print("Track ");
-        display.print(currentTrack + 1);
+        display.print(state.currentTrack + 1);
         display.print("/");
-        display.println(trackCount);
+        display.println(state.trackCount);
 
         display.setCursor(0,35);
 
-        if(trackCount > 0){
-            String name = tracks[currentTrack].title;
+        if(state.trackCount > 0){
+            String name = tracks[state.currentTrack].title;
 
             if(name.length() > 20){
                 name = name.substring(0,20);
@@ -170,7 +170,7 @@ void OledTask(void *pvParameters){
         display.setCursor(0,55);
 
         display.println(
-            isPlaying ?
+            state.isPlaying ?
             "PLAYING" :
             "STOPPED");
         }
@@ -325,11 +325,11 @@ void scanMusic(){
 void audio_eof_mp3(const char *info){
     Serial.printf("Track finished: %s\n", info);
 
-    currentTrack++;
-    if(currentTrack >= trackCount) currentTrack = 0;
+    state.currentTrack++;
+    if(state.currentTrack >= state.trackCount) state.currentTrack = 0;
 
-    if(trackCount > 0){
-        audio.connecttoFS(SD, tracks[currentTrack].path.c_str());
-        isPlaying = true;
+    if(state.trackCount > 0){
+        audio.connecttoFS(SD, tracks[state.currentTrack].path.c_str());
+        state.isPlaying = true;
     }
 }
